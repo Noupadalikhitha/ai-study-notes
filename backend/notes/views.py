@@ -13,8 +13,19 @@ from .serializers import (
 from ai_service.services import AIService
 
 
-class SubjectListView(generics.ListAPIView):
-    """List all subjects."""
+class SubjectListView(generics.ListCreateAPIView):
+    """List and create subjects."""
+    
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class SubjectDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a subject."""
     
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
@@ -64,8 +75,8 @@ class StudyNoteListView(generics.ListAPIView):
         return StudyNote.objects.filter(topic__user=self.request.user)
 
 
-class StudyNoteDetailView(generics.RetrieveAPIView):
-    """Retrieve a study note."""
+class StudyNoteDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a study note."""
     
     serializer_class = StudyNoteSerializer
     permission_classes = [IsAuthenticated]
@@ -84,6 +95,25 @@ class StudyNoteDetailView(generics.RetrieveAPIView):
         
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+    
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        
+        return Response({
+            'message': 'Study note updated successfully',
+            'note': serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+        
+        return Response({
+            'message': 'Study note deleted successfully'
+        }, status=status.HTTP_204_NO_CONTENT)
 
 
 class UserPreferenceView(generics.RetrieveUpdateAPIView):
