@@ -13,6 +13,7 @@ const Topics = () => {
   const [createLoading, setCreateLoading] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [generatingNotes, setGeneratingNotes] = useState({}) // Track which topics are generating notes
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -99,6 +100,27 @@ const Topics = () => {
         difficulty: 'beginner'
       })
       toast.success('Topic updated successfully!')
+      
+      // Ask if user wants to regenerate notes for the updated topic
+      if (response.data.status === 'completed') {
+        const shouldRegenerate = window.confirm(
+          'This topic has existing notes. Would you like to regenerate them with the updated information?'
+        )
+        if (shouldRegenerate) {
+          setGeneratingNotes(prev => ({ ...prev, [response.data.id]: true }))
+          try {
+            await topicsAPI.regenerateNotes(response.data.id)
+            toast.success('Notes regenerated successfully!')
+            // Refresh the topics to show updated status
+            const updatedTopics = await topicsAPI.getAll();
+            setTopics(updatedTopics.data.results || updatedTopics.data);
+          } catch (err) {
+            toast.error('Failed to regenerate notes')
+          } finally {
+            setGeneratingNotes(prev => ({ ...prev, [response.data.id]: false }))
+          }
+        }
+      }
     } catch (error) {
       console.error('Error updating topic:', error)
       toast.error(error.response?.data?.error || 'Failed to update topic')
@@ -210,17 +232,30 @@ const Topics = () => {
                 </div>
                 <button
                   className="btn-primary w-full"
+                  disabled={generatingNotes[topic.id]}
                   onClick={async () => {
+                    setGeneratingNotes(prev => ({ ...prev, [topic.id]: true }))
                     try {
                       await topicsAPI.generateNotes(topic.id);
-                      toast.success('Notes generated!');
-                      // Optionally, refresh topics or notes here
+                      toast.success('Notes generated successfully!');
+                      // Refresh the topics to show updated status
+                      const updatedTopics = await topicsAPI.getAll();
+                      setTopics(updatedTopics.data.results || updatedTopics.data);
                     } catch (err) {
                       toast.error('Failed to generate notes');
+                    } finally {
+                      setGeneratingNotes(prev => ({ ...prev, [topic.id]: false }))
                     }
                   }}
                 >
-                  Generate Notes
+                  {generatingNotes[topic.id] ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate Notes'
+                  )}
                 </button>
               </div>
             ))}

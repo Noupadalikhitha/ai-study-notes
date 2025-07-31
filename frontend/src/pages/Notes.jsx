@@ -1,21 +1,16 @@
 import { useState, useEffect } from 'react'
 import { notesAPI, topicsAPI } from '../services/api'
-import { Search, FileText, Clock, Star, Edit, Trash2, X } from 'lucide-react'
+import { Search, FileText, Clock, Star, Trash2, RefreshCw, Eye, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const Notes = () => {
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [readingTimes, setReadingTimes] = useState({})
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [editingNote, setEditingNote] = useState(null)
-  const [editLoading, setEditLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [editFormData, setEditFormData] = useState({
-    content: '',
-    summary: '',
-    key_points: ''
-  })
+  const [regeneratingNotes, setRegeneratingNotes] = useState({}) // Track which notes are being regenerated
+  const [showNoteDetails, setShowNoteDetails] = useState(false)
+  const [selectedNote, setSelectedNote] = useState(null)
 
   useEffect(() => {
     const fetchNotes = async () => {
@@ -69,39 +64,29 @@ const Notes = () => {
     }
   }, [notes])
 
-  const handleEditNote = (note) => {
-    setEditingNote(note)
-    setEditFormData({
-      content: note.content,
-      summary: note.summary,
-      key_points: note.key_points
-    })
-    setShowEditModal(true)
+  const handleRegenerateNote = async (note) => {
+    if (!window.confirm('Are you sure you want to regenerate this note? This will replace the current content.')) {
+      return
+    }
+
+    setRegeneratingNotes(prev => ({ ...prev, [note.id]: true }))
+    try {
+      await topicsAPI.regenerateNotes(note.topic)
+      toast.success('Note regenerated successfully!')
+      // Refresh notes
+      const response = await notesAPI.getAll()
+      setNotes(response.data.results || response.data)
+    } catch (error) {
+      console.error('Error regenerating note:', error)
+      toast.error(error.response?.data?.error || 'Failed to regenerate note')
+    } finally {
+      setRegeneratingNotes(prev => ({ ...prev, [note.id]: false }))
+    }
   }
 
-  const handleUpdateNote = async (e) => {
-    e.preventDefault()
-    setEditLoading(true)
-
-    try {
-      const response = await notesAPI.update(editingNote.id, editFormData)
-      setNotes(notes.map(note => 
-        note.id === editingNote.id ? response.data : note
-      ))
-      setShowEditModal(false)
-      setEditingNote(null)
-      setEditFormData({
-        content: '',
-        summary: '',
-        key_points: ''
-      })
-      toast.success('Note updated successfully!')
-    } catch (error) {
-      console.error('Error updating note:', error)
-      toast.error(error.response?.data?.error || 'Failed to update note')
-    } finally {
-      setEditLoading(false)
-    }
+  const handleViewNoteDetails = (note) => {
+    setSelectedNote(note)
+    setShowNoteDetails(true)
   }
 
   const handleDeleteNote = async (noteId) => {
@@ -111,12 +96,16 @@ const Notes = () => {
 
     setDeleteLoading(true)
     try {
-      await notesAPI.delete(noteId)
+      console.log('Attempting to delete note with ID:', noteId)
+      const response = await notesAPI.delete(noteId)
+      console.log('Delete response:', response)
       setNotes(notes.filter(note => note.id !== noteId))
       toast.success('Note deleted successfully!')
     } catch (error) {
       console.error('Error deleting note:', error)
-      toast.error(error.response?.data?.error || 'Failed to delete note')
+      console.error('Error response:', error.response)
+      console.error('Error data:', error.response?.data)
+      toast.error(error.response?.data?.error || error.response?.data?.detail || 'Failed to delete note')
     } finally {
       setDeleteLoading(false)
     }
@@ -165,11 +154,12 @@ const Notes = () => {
                   </div>
                   <div className="flex items-center space-x-2 ml-4">
                     <button
-                      onClick={() => handleEditNote(note)}
-                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                      title="Edit note"
+                      onClick={() => handleRegenerateNote(note)}
+                      disabled={regeneratingNotes[note.id]}
+                      className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                      title="Regenerate note"
                     >
-                      <Edit className="h-4 w-4" />
+                      <RefreshCw className={`h-4 w-4 ${regeneratingNotes[note.id] ? 'animate-spin' : ''}`} />
                     </button>
                     <button
                       onClick={() => handleDeleteNote(note.id)}
@@ -201,9 +191,18 @@ const Notes = () => {
                       {note.word_count} words
                     </div>
                   </div>
-                  <div className="flex items-center">
-                    <Star className="h-4 w-4 mr-1" />
-                    {note.analytics?.user_rating || 'Not rated'}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleViewNoteDetails(note)}
+                      className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View Details
+                    </button>
+                    <div className="flex items-center">
+                      <Star className="h-4 w-4 mr-1" />
+                      {note.analytics?.user_rating || 'Not rated'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -212,22 +211,17 @@ const Notes = () => {
         )}
       </div>
 
-      {/* Edit Note Modal */}
-      {showEditModal && editingNote && (
+      {/* Note Details Modal */}
+      {showNoteDetails && selectedNote && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 max-w-4xl shadow-lg rounded-md bg-white">
+          <div className="relative top-10 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
             <div className="mt-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Edit Note: {editingNote.topic_title}</h3>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-medium text-gray-900">Note Details: {selectedNote.topic_title}</h3>
                 <button
                   onClick={() => {
-                    setShowEditModal(false)
-                    setEditingNote(null)
-                    setEditFormData({
-                      content: '',
-                      summary: '',
-                      key_points: ''
-                    })
+                    setShowNoteDetails(false)
+                    setSelectedNote(null)
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -235,74 +229,69 @@ const Notes = () => {
                 </button>
               </div>
               
-              <form onSubmit={handleUpdateNote} className="space-y-4">
+              <div className="space-y-6">
+                {/* Summary */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Summary
-                  </label>
-                  <textarea
-                    name="summary"
-                    value={editFormData.summary}
-                    onChange={(e) => setEditFormData({...editFormData, summary: e.target.value})}
-                    rows={3}
-                    className="input-field"
-                    placeholder="Brief summary of the note..."
-                  />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Summary</h4>
+                  <p className="text-gray-700 bg-gray-50 p-4 rounded-lg">
+                    {selectedNote.summary}
+                  </p>
                 </div>
 
+                {/* Key Points */}
+                {selectedNote.key_points && selectedNote.key_points.length > 0 && (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">Key Points</h4>
+                    <ul className="list-disc list-inside space-y-1 text-gray-700 bg-gray-50 p-4 rounded-lg">
+                      {selectedNote.key_points.map((point, index) => (
+                        <li key={index}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Full Content */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Key Points
-                  </label>
-                  <textarea
-                    name="key_points"
-                    value={editFormData.key_points}
-                    onChange={(e) => setEditFormData({...editFormData, key_points: e.target.value})}
-                    rows={4}
-                    className="input-field"
-                    placeholder="Key points to remember..."
-                  />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Full Content</h4>
+                  <div className="text-gray-700 bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
+                    <div className="whitespace-pre-wrap">{selectedNote.content}</div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Content
-                  </label>
-                  <textarea
-                    name="content"
-                    value={editFormData.content}
-                    onChange={(e) => setEditFormData({...editFormData, content: e.target.value})}
-                    rows={12}
-                    className="input-field"
-                    placeholder="Detailed content of the note..."
-                  />
-                </div>
+                {/* References */}
+                {selectedNote.references && selectedNote.references.length > 0 && (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">References</h4>
+                    <ul className="list-disc list-inside space-y-1 text-gray-700 bg-gray-50 p-4 rounded-lg">
+                      {selectedNote.references.map((ref, index) => (
+                        <li key={index}>
+                          {typeof ref === 'string' ? ref : ref.title || ref.url || JSON.stringify(ref)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                <div className="flex space-x-3 pt-4">
-                  <button
-                    type="submit"
-                    disabled={editLoading}
-                    className="flex-1 btn-primary"
-                  >
-                    {editLoading ? 'Updating...' : 'Update Note'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowEditModal(false)
-                      setEditingNote(null)
-                      setEditFormData({
-                        content: '',
-                        summary: '',
-                        key_points: ''
-                      })
-                    }}
-                    className="flex-1 btn-secondary"
-                  >
-                    Cancel
-                  </button>
+                {/* Note Metadata */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
+                  <div className="text-center">
+                    <div className="text-sm text-gray-500">Reading Time</div>
+                    <div className="font-medium">{selectedNote.reading_time_minutes} min</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-500">Word Count</div>
+                    <div className="font-medium">{selectedNote.word_count}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-500">AI Model</div>
+                    <div className="font-medium">{selectedNote.ai_model_used}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-500">Generated</div>
+                    <div className="font-medium">{new Date(selectedNote.created_at).toLocaleDateString()}</div>
+                  </div>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         </div>

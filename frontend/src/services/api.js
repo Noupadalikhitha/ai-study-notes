@@ -64,7 +64,6 @@ export const topicsAPI = {
 export const notesAPI = {
   getAll: (params) => api.get('/notes/notes/', { params }),
   getById: (id) => api.get(`/notes/notes/${id}/`),
-  update: (id, data) => api.put(`/notes/notes/${id}/`, data),
   delete: (id) => api.delete(`/notes/notes/${id}/`),
   rateNote: (id, rating) => api.post(`/notes/notes/${id}/rate/`, { rating }),
 }

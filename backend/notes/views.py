@@ -108,12 +108,30 @@ class StudyNoteDetailView(generics.RetrieveUpdateDestroyAPIView):
         }, status=status.HTTP_200_OK)
     
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        instance.delete()
-        
-        return Response({
-            'message': 'Study note deleted successfully'
-        }, status=status.HTTP_204_NO_CONTENT)
+        try:
+            instance = self.get_object()
+            
+            # Get the topic before deleting the note
+            topic = instance.topic
+            
+            # Delete associated analytics first
+            if hasattr(instance, 'analytics'):
+                instance.analytics.delete()
+            
+            # Delete the note
+            instance.delete()
+            
+            # Update topic status back to pending since notes are deleted
+            topic.status = 'pending'
+            topic.save()
+            
+            return Response({
+                'message': 'Study note deleted successfully'
+            }, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({
+                'error': f'Failed to delete study note: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserPreferenceView(generics.RetrieveUpdateAPIView):
